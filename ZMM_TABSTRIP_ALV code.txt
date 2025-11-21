@@ -1,0 +1,446 @@
+*&---------------------------------------------------------------------*
+*& Report ZMM_TABSTRIP_ALV
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zmm_tabstrip_alv.
+
+
+DATA: g_material TYPE mara-matnr,
+      g_plant    TYPE marc-werks.
+
+
+"material data table
+DATA: g_cc_material_tab TYPE REF TO cl_gui_custom_container,
+      go_grid1          TYPE REF TO cl_gui_alv_grid.
+
+
+"purchasing data table
+DATA: g_cc_purchasing_tab TYPE REF TO cl_gui_custom_container,
+      go_grid2            TYPE REF TO cl_gui_alv_grid.
+
+
+TYPES: BEGIN OF ty_mat,
+         matnr TYPE mara-matnr,
+         maktx TYPE makt-maktx,
+         werks TYPE marc-werks,
+         meins TYPE mara-meins,
+         mtart TYPE mara-mtart,
+         matkl TYPE mara-matkl,
+       END OF ty_mat.
+
+
+DATA: gt_mat TYPE TABLE OF ty_mat,
+      gs_mat TYPE ty_mat.
+
+TYPES: BEGIN OF ty_pur,
+         ebeln TYPE ekpo-ebeln,
+         ebelp TYPE ekpo-ebelp,
+         matnr TYPE ekpo-matnr,
+         aedat TYPE ekko-aedat,
+         werks TYPE ekpo-werks,
+         bsart TYPE ekko-bsart,  "Document type
+         loekz TYPE ekpo-loekz,  "Deletion indicator
+         lifnr TYPE ekko-lifnr,
+         ekgrp TYPE ekko-ekgrp,
+         menge TYPE ekpo-menge,
+         netpr TYPE ekpo-netpr,
+         peinh TYPE ekpo-peinh,
+         meins TYPE ekpo-meins,
+       END OF ty_pur.
+
+DATA: lt_pur TYPE TABLE OF ty_pur,
+      ls_pur TYPE ty_pur.
+
+" fieldcatalog dla ALV materiałowego
+DATA: lt_fcat TYPE lvc_t_fcat,
+      ls_fcat TYPE lvc_s_fcat.
+
+
+"fieldcatalog FOR ALV purchasing
+DATA: lt_fcat2 TYPE lvc_t_fcat,
+      ls_fcat2 TYPE lvc_s_fcat.
+
+CLASS lcl_get_mat_data DEFINITION CREATE PUBLIC.
+
+  PUBLIC SECTION.
+
+
+    METHODS get_material_data
+      IMPORTING iv_mat   TYPE mara-matnr
+                iv_plant TYPE marc-werks OPTIONAL
+      EXPORTING
+                et_data  LIKE gt_mat.
+
+
+    METHODS get_purchasing_data
+      IMPORTING iv_pur      TYPE mara-matnr
+                iv_plant    TYPE marc-werks OPTIONAL
+      EXPORTING
+                et_data_pur LIKE lt_pur.
+
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+
+ENDCLASS.
+
+CLASS lcl_get_mat_data IMPLEMENTATION.
+
+  METHOD get_material_data.
+
+    CLEAR gt_mat.
+    IF iv_plant IS INITIAL.
+
+      SELECT a~matnr,
+             b~maktx,
+             c~werks,
+             a~meins,
+             a~mtart,
+             a~matkl
+        FROM mara AS a
+        LEFT JOIN makt AS b
+          ON b~matnr = a~matnr
+         AND b~spras = @sy-langu
+        LEFT JOIN marc AS c
+          ON c~matnr = a~matnr
+        INTO CORRESPONDING FIELDS OF TABLE @gt_mat
+        WHERE a~matnr = @iv_mat.
+
+
+    ELSE.
+
+      SELECT a~matnr,
+             b~maktx,
+             c~werks,
+             a~meins,
+             a~mtart,
+             a~matkl
+        FROM mara AS a
+        LEFT JOIN makt AS b
+          ON b~matnr = a~matnr
+         AND b~spras = @sy-langu
+        LEFT JOIN marc AS c
+          ON c~matnr = a~matnr
+        INTO CORRESPONDING FIELDS OF TABLE @gt_mat
+        WHERE a~matnr = @iv_mat AND c~werks = @iv_plant.
+
+    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD get_purchasing_data.
+
+    CLEAR lt_pur.
+    IF iv_plant IS INITIAL.
+
+      SELECT
+  ekpo~ebeln,
+  ekpo~ebelp,
+  ekpo~matnr,
+  ekko~aedat,
+  ekpo~werks,
+  ekko~bsart,  
+  ekpo~loekz, 
+  ekko~lifnr,
+  ekko~ekgrp,
+  ekpo~menge,
+  ekpo~netpr,
+  ekpo~peinh,
+  ekpo~meins
+  FROM ekpo
+  INNER JOIN ekko
+  ON ekpo~ebeln = ekko~ebeln
+  INTO CORRESPONDING FIELDS OF TABLE @lt_pur
+  UP TO 100 ROWS
+  WHERE ekko~bsart = 'NB' AND ekpo~loekz <> 'L' AND ekpo~matnr = @iv_pur.
+
+    ELSE.
+
+      SELECT
+ekpo~ebeln,
+ekpo~ebelp,
+ekpo~matnr,
+ekko~aedat,
+ekpo~werks,
+ekko~bsart, 
+ekpo~loekz,  
+ekko~lifnr,
+ekko~ekgrp,
+ekpo~menge,
+ekpo~netpr,
+ekpo~peinh,
+ekpo~meins
+FROM ekpo
+INNER JOIN ekko
+ON ekpo~ebeln = ekko~ebeln
+INTO CORRESPONDING FIELDS OF TABLE @lt_pur
+UP TO 100 ROWS
+WHERE ekko~bsart = 'NB' AND ekpo~loekz <> 'L' AND ekpo~matnr = @iv_pur AND ekpo~werks = @iv_plant.
+
+    ENDIF.
+
+  ENDMETHOD.
+
+ENDCLASS.
+
+CLASS lcl_event_handler DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS on_double_click
+      FOR EVENT double_click OF cl_gui_alv_grid
+      IMPORTING e_row e_column.
+ENDCLASS.
+
+CLASS lcl_event_handler IMPLEMENTATION.
+
+  METHOD on_double_click.  
+
+    DATA ls_row TYPE ty_mat.
+
+    
+    READ TABLE gt_mat INTO ls_row INDEX e_row-index.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+
+    IF e_column-fieldname = 'MATNR'.
+      
+      SET PARAMETER ID 'MAT' FIELD ls_row-matnr.
+      CALL TRANSACTION 'MM03' AND SKIP FIRST SCREEN.
+    ENDIF.
+
+    DATA ls_row1 TYPE ty_pur.
+
+    READ TABLE lt_pur INTO ls_row1 INDEX e_row-index.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+
+    IF e_column-fieldname = 'EBELN'.
+      
+      SET PARAMETER ID 'BES' FIELD ls_row1-ebeln.
+      CALL TRANSACTION 'ME23N'.
+    ENDIF.
+
+  ENDMETHOD.
+
+
+ENDCLASS.
+
+START-OF-SELECTION.
+
+  CALL SCREEN 0100.
+
+
+*&SPWIZARD: FUNCTION CODES FOR TABSTRIP 'TAB_WIZARD'
+  CONSTANTS: BEGIN OF c_tab_wizard,
+               tab1 LIKE sy-ucomm VALUE 'TAB_WIZARD_FC1',
+               tab2 LIKE sy-ucomm VALUE 'TAB_WIZARD_FC2',
+             END OF c_tab_wizard.
+*&SPWIZARD: DATA FOR TABSTRIP 'TAB_WIZARD'
+  CONTROLS:  tab_wizard TYPE TABSTRIP.
+  DATA: BEGIN OF g_tab_wizard,
+          subscreen   LIKE sy-dynnr,
+          prog        LIKE sy-repid VALUE 'Z_STRIP_WIZARD',
+          pressed_tab LIKE sy-ucomm VALUE c_tab_wizard-tab1,
+        END OF g_tab_wizard.
+  DATA:      ok_code LIKE sy-ucomm.
+
+*&SPWIZARD: OUTPUT MODULE FOR TS 'TAB_WIZARD'. DO NOT CHANGE THIS LINE!
+*&SPWIZARD: SETS ACTIVE TAB
+MODULE tab_wizard_active_tab_set OUTPUT.
+  tab_wizard-activetab = g_tab_wizard-pressed_tab.
+  CASE g_tab_wizard-pressed_tab.
+    WHEN c_tab_wizard-tab1.
+      g_tab_wizard-subscreen = '0101'.
+    WHEN c_tab_wizard-tab2.
+      g_tab_wizard-subscreen = '0102'.
+    WHEN OTHERS.
+*&SPWIZARD:      DO NOTHING
+  ENDCASE.
+ENDMODULE.
+
+*&SPWIZARD: INPUT MODULE FOR TS 'TAB_WIZARD'. DO NOT CHANGE THIS LINE!
+*&SPWIZARD: GETS ACTIVE TAB
+MODULE tab_wizard_active_tab_get INPUT.
+  ok_code = sy-ucomm.
+  CASE ok_code.
+    WHEN c_tab_wizard-tab1.
+      g_tab_wizard-pressed_tab = c_tab_wizard-tab1.
+    WHEN c_tab_wizard-tab2.
+      g_tab_wizard-pressed_tab = c_tab_wizard-tab2.
+    WHEN OTHERS.
+*&SPWIZARD:      DO NOTHING
+  ENDCASE.
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*& Module STATUS_0110 OUTPUT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+MODULE status_0110 OUTPUT.
+* SET PF-STATUS 'xxxxxxxx'.
+* SET TITLEBAR 'xxx'.
+
+
+
+  IF go_grid1 IS INITIAL.
+    CREATE OBJECT g_cc_material_tab
+      EXPORTING
+        container_name = 'G_MAT_DATA'. " dokładnie ta nazwa z SE51
+
+    CREATE OBJECT go_grid1
+      EXPORTING
+        i_parent = g_cc_material_tab.
+  ENDIF.
+
+  SET HANDLER lcl_event_handler=>on_double_click FOR go_grid1.
+
+
+  IF lt_fcat IS INITIAL.
+    CLEAR ls_fcat.
+
+    ls_fcat-fieldname = 'MATNR'.
+    ls_fcat-col_pos   = 1.
+    ls_fcat-scrtext_m = 'Material'.
+    APPEND ls_fcat TO lt_fcat.
+
+    CLEAR ls_fcat.
+    ls_fcat-fieldname = 'MAKTX'.
+    ls_fcat-col_pos   = 2.
+    ls_fcat-scrtext_m = 'Description'.
+    APPEND ls_fcat TO lt_fcat.
+
+    CLEAR ls_fcat.
+    ls_fcat-fieldname = 'WERKS'.
+    ls_fcat-col_pos   = 3.
+    ls_fcat-scrtext_m = 'Plant'.
+    APPEND ls_fcat TO lt_fcat.
+
+    CLEAR ls_fcat.
+    ls_fcat-fieldname = 'MEINS'.
+    ls_fcat-col_pos   = 4.
+    ls_fcat-scrtext_m = 'Base UoM'.
+    APPEND ls_fcat TO lt_fcat.
+
+    CLEAR ls_fcat.
+    ls_fcat-fieldname = 'MTART'.
+    ls_fcat-col_pos   = 5.
+    ls_fcat-scrtext_m = 'Mat.Type'.
+    APPEND ls_fcat TO lt_fcat.
+
+    CLEAR ls_fcat.
+    ls_fcat-fieldname = 'MATKL'.
+    ls_fcat-col_pos   = 6.
+    ls_fcat-scrtext_m = 'Mat.Group'.
+    APPEND ls_fcat TO lt_fcat.
+  ENDIF.
+
+
+  IF go_grid1->is_ready_for_input( ) = abap_false.
+    go_grid1->set_table_for_first_display(
+      EXPORTING
+        i_structure_name = ''      
+      CHANGING
+        it_outtab        = gt_mat
+        it_fieldcatalog  = lt_fcat ).
+  ELSE.
+    go_grid1->refresh_table_display( ).
+  ENDIF.
+
+
+  IF go_grid2 IS INITIAL.
+    CREATE OBJECT g_cc_purchasing_tab
+      EXPORTING
+        container_name = 'G_PUR_DATA'.
+
+    CREATE OBJECT go_grid2
+      EXPORTING
+        i_parent = g_cc_purchasing_tab.
+  ENDIF.
+
+SET HANDLER lcl_event_handler=>on_double_click FOR go_grid2.
+
+  IF lt_fcat2 IS INITIAL.
+    ls_fcat2 = VALUE lvc_s_fcat( ).
+    CLEAR lt_fcat2.
+
+    ls_fcat2-fieldname = 'EBELN'.  ls_fcat2-col_pos = 1. ls_fcat2-scrtext_m = 'PO number'.   APPEND ls_fcat2 TO lt_fcat2.
+    ls_fcat2-fieldname = 'EBELP'.  ls_fcat2-col_pos = 2. ls_fcat2-scrtext_m = 'PO Item'. APPEND ls_fcat2 TO lt_fcat2.
+    ls_fcat2-fieldname = 'BSART'.  ls_fcat2-col_pos = 3. ls_fcat2-scrtext_m = 'Document type'. APPEND ls_fcat2 TO lt_fcat2.
+    ls_fcat2-fieldname = 'AEDAT'.  ls_fcat2-col_pos = 4. ls_fcat2-scrtext_m = 'Document date'. APPEND ls_fcat2 TO lt_fcat2.
+    ls_fcat2-fieldname = 'WERKS'.  ls_fcat2-col_pos = 5. ls_fcat2-scrtext_m = 'Plant'. APPEND ls_fcat2 TO lt_fcat2.
+    ls_fcat2-fieldname = 'LOEKZ'.  ls_fcat2-col_pos = 6. ls_fcat2-scrtext_m = 'Deletion ind.'.    APPEND ls_fcat2 TO lt_fcat2.
+    ls_fcat2-fieldname = 'LIFNR'.  ls_fcat2-col_pos = 7. ls_fcat2-scrtext_m = 'Vendor number'.   APPEND ls_fcat2 TO lt_fcat2.
+    ls_fcat2-fieldname = 'EKGRP'.  ls_fcat2-col_pos = 8. ls_fcat2-scrtext_m = 'Purch. gr.'.   APPEND ls_fcat2 TO lt_fcat2.
+    ls_fcat2-fieldname = 'MENGE'.  ls_fcat2-col_pos = 9. ls_fcat2-scrtext_m = 'PO quantity'.   APPEND ls_fcat2 TO lt_fcat2.
+    ls_fcat2-fieldname = 'NETPR'.  ls_fcat2-col_pos = 10. ls_fcat2-scrtext_m = 'Price'.   APPEND ls_fcat2 TO lt_fcat2.
+    ls_fcat2-fieldname = 'PEINH'.  ls_fcat2-col_pos = 11. ls_fcat2-scrtext_m = 'Per'.   APPEND ls_fcat2 TO lt_fcat2.
+    ls_fcat2-fieldname = 'MEINS'.  ls_fcat2-col_pos = 12. ls_fcat2-scrtext_m = 'Unit'.   APPEND ls_fcat2 TO lt_fcat2.
+  ENDIF.
+
+  IF go_grid2->is_ready_for_input( ) = abap_false.
+    go_grid2->set_table_for_first_display(
+      EXPORTING
+        i_structure_name = ''      
+      CHANGING
+        it_outtab        = lt_pur
+        it_fieldcatalog  = lt_fcat2 ).
+  ELSE.
+    go_grid2->refresh_table_display( ).
+  ENDIF.
+
+
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*& Module STATUS_0100 OUTPUT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+MODULE status_0100 OUTPUT.
+  SET PF-STATUS 'Z_STATUS1'.
+  SET TITLEBAR 'Select values'.
+
+
+  CASE sy-ucomm.
+
+    WHEN 'SEARCH'.
+
+
+    WHEN 'BACK'.
+      SET SCREEN 0.
+  ENDCASE.
+
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0100  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE user_command_0100 INPUT.
+
+  CASE sy-ucomm.
+
+    WHEN 'SEARCH'.
+
+      DATA(lo_mat) = NEW lcl_get_mat_data( ).
+
+      lo_mat->get_material_data(
+        EXPORTING
+          iv_mat = g_material
+          iv_plant = g_plant
+        IMPORTING
+          et_data = gt_mat ).
+
+      DATA(lo_pur) = NEW lcl_get_mat_data( ).
+
+      lo_mat->get_purchasing_data(
+        EXPORTING
+          iv_pur = g_material
+          iv_plant = g_plant
+        IMPORTING
+          et_data_pur = lt_pur ).
+
+
+  ENDCASE.
+
+ENDMODULE.
